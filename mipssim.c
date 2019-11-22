@@ -8,6 +8,9 @@
 #include "mipssim.h"
 
 #define BREAK_POINT 200000 // exit after so many cycles -- useful for debugging
+#define I_TYPE 6
+#define B_TYPE 6
+#define J_TYPE 6
 
 // Global variables
 char mem_init_path[1000];
@@ -27,9 +30,21 @@ static inline uint8_t get_instruction_type(int opcode)
             return EOP_TYPE;
 
         ///@students: fill in the rest
+        case LW:
+            return I_TYPE;
+        case SW:
+            return I_TYPE;
+        case BEQ:
+            return B_TYPE;
+        case J:
+            return J_TYPE;
+        case ADDI:
+            return I_TYPE;
+        case SLT:
+            return R_TYPE;
 
         default:
-            assert(false);
+        assert(false);
     }
     assert(false);
 }
@@ -63,6 +78,9 @@ void FSM()
             control->ALUOp = 0;
             if (IR_meta->type == R_TYPE) state = EXEC;
             else if (opcode == EOP) state = EXIT_STATE;
+            else if (IR_meta ->type == I_TYPE) state = I_TYPE_EXEC;
+            else if (IR_meta ->type == B_TYPE) state = BRANCH_COMPL;
+            else if (IR_meta ->type == J_TYPE) state = JUMP_COMPL;
             else assert(false);
             break;
         case EXEC:
@@ -71,6 +89,44 @@ void FSM()
             control->ALUOp = 2;
             state = R_TYPE_COMPL;
             break;
+        case I_TYPE_EXEC:
+            control ->ALUSrcA = 1;
+            control ->ALUSrcB = 2;
+            control ->ALUOp = 0;
+            state = I_TYPE_COMPL;
+            break;
+        
+        case I_TYPE_COMPL:
+            if (opcode == LW ) control -> MemRead = 1;
+            else if (opcode == SW) control -> MemWrite = 1;
+            control -> IorD = 1;
+            if (opcode == LW || opcode == ADDI) state = WB_STEP;
+            else if (opcode == SW) state = INSTR_FETCH; 
+            break;
+
+        case WB_STEP:
+            control -> RegDst = 0;
+            control -> RegWrite = 1;
+            if (opcode == LW) control -> MemtoReg = 1;
+            else if (opcode == ADDI) control -> MemtoReg = 0;
+            state = INSTR_FETCH;
+            break;
+        
+        case BRANCH_COMPL:
+            control -> ALUSrcA = 1;
+            control -> ALUSrcB = 0;
+            control -> ALUOp = 1;
+            control -> PCWriteCond = 1;
+            control -> PCSource = 1;
+            state = INSTR_FETCH;
+            break;
+        
+        case JUMP_COMPL:
+            control -> PCWrite = 1;
+            control -> PCSource = 2;
+            state = INSTR_FETCH;
+            break;
+ 
         case R_TYPE_COMPL:
             control->RegDst = 1;
             control->RegWrite = 1;
@@ -187,6 +243,21 @@ void set_up_IR_meta(int IR, struct instr_meta *IR_meta)
                 printf("Executing ADD(%d), $%u = $%u + $%u (function: %u) \n",
                        IR_meta->opcode,  IR_meta->reg_11_15, IR_meta->reg_21_25,  IR_meta->reg_16_20, IR_meta->function);
             else assert(false);
+            break;
+        case LW:
+                printf("Executing LW(%d) \n", IR_meta -> opcode);
+            break;
+        case SW:
+                printf("Executing SW(%d) \n", IR_meta -> opcode);
+            break;
+        case BEQ:
+                printf("Executing BEQ(%d) \n", IR_meta -> opcode);
+            break;
+        case ADDI:
+                printf("Executing ADDI(%d) \n", IR_meta -> opcode);
+            break;
+        case SLT:
+                printf("Executing SLT(%d) \n", IR_meta -> opcode);
             break;
         case EOP:
             printf("Executing EOP(%d) \n", IR_meta->opcode);
