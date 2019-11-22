@@ -175,6 +175,9 @@ void execute()
         case 1:
             alu_opB = WORD_SIZE;
             break;
+        case 2:
+            alu_opB = shifted_immediate; //part I just added probs false
+            break;
         case 3:
             alu_opB = shifted_immediate;
             break;
@@ -187,6 +190,9 @@ void execute()
         case 0:
             next_pipe_regs->ALUOut = alu_opA + alu_opB;
             break;
+        case 1:
+            next_pipe_regs->ALUOut = alu_opA + alu_opB; //part I just added probs false
+
         case 2:
             if (IR_meta->function == ADD)
                 next_pipe_regs->ALUOut = alu_opA + alu_opB;
