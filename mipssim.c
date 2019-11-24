@@ -176,7 +176,7 @@ void execute()
             alu_opB = WORD_SIZE;
             break;
         case 2:
-            alu_opB = immediate; //part I just added probs false
+            alu_opB = get_sign_extended_imm_id; //part I just added probs false
             break;
         case 3:
             alu_opB = shifted_immediate;
