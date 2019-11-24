@@ -176,7 +176,7 @@ void execute()
             alu_opB = WORD_SIZE;
             break;
         case 2:
-            alu_opB = shifted_immediate; //part I just added probs false
+            alu_opB = get_sign_extended_imm_id; //part I just added probs false
             break;
         case 3:
             alu_opB = shifted_immediate;
@@ -191,8 +191,11 @@ void execute()
             next_pipe_regs->ALUOut = alu_opA + alu_opB;
             break;
         case 1:
-            next_pipe_regs->ALUOut = alu_opA + alu_opB; //part I just added probs false
-
+            if (IR_meta->function == SW || LW) next_pipe_regs->ALUOut = alu_opA + alu_opB; //part I just added probs false
+            else if (alu_opA == alu_opB) next_pipe_regs ->pc = next_pipe_regs -> ALUOut;
+            else 
+                assert(false);
+            break;
         case 2:
             if (IR_meta->function == ADD)
                 next_pipe_regs->ALUOut = alu_opA + alu_opB;
