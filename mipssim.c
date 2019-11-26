@@ -7,10 +7,10 @@
 
 #include "mipssim.h"
 
-#define BREAK_POINT 200000 // exit after so many cycles -- useful for debugging
-#define I_TYPE 6
-#define B_TYPE 6
-#define J_TYPE 6
+#define BREAK_POINT 2000000 // exit after so many cycles -- useful for debugging
+#define I_TYPE 1
+#define B_TYPE 1
+#define J_TYPE 1
 
 // Global variables
 char mem_init_path[1000];
@@ -170,13 +170,14 @@ void execute()
     int shifted_immediate = (immediate) << 2;
     switch (control->ALUSrcB) {
         case 0:
-            alu_opB = curr_pipe_regs->B;
+            if (IR_meta->function == ADD) alu_opB = curr_pipe_regs->B;
+            else if (IR_meta->function == BEQ) alu_opB = immediate;
             break;
         case 1:
             alu_opB = WORD_SIZE;
             break;
         case 2:
-            alu_opB = get_sign_extended_imm_id; //part I just added probs false
+            alu_opB = immediate; //part I just added probs false
             break;
         case 3:
             alu_opB = shifted_immediate;
@@ -188,19 +189,22 @@ void execute()
 
     switch (control->ALUOp) {
         case 0:
-            next_pipe_regs->ALUOut = alu_opA + alu_opB;
+         if (IR_meta->function == SW || LW) next_pipe_regs->ALUOut = alu_opA + alu_opB; //This is what you recently changed (it was in case 1)
+         else if (IR_meta->function == SW || IR_meta->function == LW) next_pipe_regs->ALUOut = alu_opA + alu_opB;
+         else if (IR_meta ->function == J) next_pipe_regs ->ALUOut = alu_opB;
             break;
         case 1:
-            if (IR_meta->function == SW || LW) next_pipe_regs->ALUOut = alu_opA + alu_opB; //part I just added probs false
-            else if (alu_opA == alu_opB) next_pipe_regs ->pc = next_pipe_regs -> ALUOut;
+            if (IR_meta->function == BEQ && arch_state.next_pipe_regs.A == arch_state.next_pipe_regs.B) next_pipe_regs ->ALUOut = alu_opB;
             else 
                 assert(false);
             break;
         case 2:
             if (IR_meta->function == ADD)
                 next_pipe_regs->ALUOut = alu_opA + alu_opB;
-            else
-                assert(false);
+            else if (IR_meta->function == SLT)
+                if (alu_opA < alu_opB) next_pipe_regs -> ALUOut = 1;
+                else
+                    next_pipe_regs ->ALUOut =0;
             break;
         default:
             assert(false);
@@ -209,8 +213,15 @@ void execute()
     // PC calculation
     switch (control->PCSource) {
         case 0:
-            next_pipe_regs->pc = next_pipe_regs->ALUOut;
+            next_pipe_regs->pc = curr_pipe_regs->pc+4;
             break;
+        case 1:
+            if (arch_state.next_pipe_regs.A == arch_state.next_pipe_regs.B) next_pipe_regs->pc = next_pipe_regs -> ALUOut;
+            else if (alu_opA != alu_opB)
+                next_pipe_regs->pc = curr_pipe_regs->pc +4;
+            break;
+        case 2:
+            next_pipe_regs->pc = next_pipe_regs->ALUOut;
         default:
             assert(false);
     }
@@ -224,7 +235,9 @@ void memory_access() {
 void write_back()
 {
     if (arch_state.control.RegWrite) {
-        int write_reg_id =  arch_state.IR_meta.reg_11_15;
+        int write_reg_id;
+        if (ADDI) write_reg_id = arch_state.IR_meta.reg_16_20;
+        else write_reg_id =  arch_state.IR_meta.reg_11_15;
         check_is_valid_reg_id(write_reg_id);
         int write_data =  arch_state.curr_pipe_regs.ALUOut;
         if (write_reg_id > 0) {
@@ -254,22 +267,31 @@ void set_up_IR_meta(int IR, struct instr_meta *IR_meta)
             else assert(false);
             break;
         case LW:
-                printf("Executing LW(%d) \n", IR_meta -> opcode);
+                printf("Executing LW(%d), $%u =  MEM[$%u + %u] \n", 
+                       IR_meta->opcode, IR_meta->reg_16_20, IR_meta->reg_21_25, IR_meta->immediate);
             break;
         case SW:
-                printf("Executing SW(%d) \n", IR_meta -> opcode);
+                printf("Executing SW(%d), MEM[$%u + %u] = $%u \n", 
+                       IR_meta->opcode, IR_meta->reg_21_25, IR_meta->immediate, IR_meta->reg_16_20);
             break;
         case BEQ:
-                printf("Executing BEQ(%d) \n", IR_meta -> opcode);
+                printf("Executing BEQ(%d), if $%u == $%u go to %u << 2  \n", 
+                       IR_meta->opcode, IR_meta->reg_21_25, IR_meta->reg_16_20, IR_meta->immediate);
             break;
         case ADDI:
-                printf("Executing ADDI(%d) \n", IR_meta -> opcode);
+                printf("Executing ADDI(%d), $%u = $%u + %u \n",
+                       IR_meta->opcode, IR_meta->reg_16_20, IR_meta->reg_21_25, IR_meta->immediate);
             break;
         case SLT:
-                printf("Executing SLT(%d) \n", IR_meta -> opcode);
+                printf("Executing SLT(%d), f $%u < $%u, then $%u = 1;  else $%u = 0 (function: %u) \n", 
+                       IR_meta->opcode, IR_meta->reg_21_25, IR_meta->reg_16_20, IR_meta->reg_11_15, IR_meta->reg_11_15, IR_meta->function);
             break;
         case EOP:
-            printf("Executing EOP(%d) \n", IR_meta->opcode);
+                printf("Executing EOP(%d) \n", IR_meta->opcode);
+            break;
+        case J:
+                printf("Executing J(%d), jump to %u \n;",
+                       IR_meta->opcode, IR_meta->jmp_offset);
             break;
         default: assert(false);
     }
