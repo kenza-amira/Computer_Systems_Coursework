@@ -7,10 +7,10 @@
 
 #include "mipssim.h"
 
-#define BREAK_POINT 2000000 // exit after so many cycles -- useful for debugging
+#define BREAK_POINT 100// exit after so many cycles -- useful for debugging
 #define I_TYPE 1
-#define B_TYPE 1
-#define J_TYPE 1
+#define B_TYPE 2
+#define J_TYPE 3
 
 // Global variables
 char mem_init_path[1000];
@@ -72,23 +72,27 @@ void FSM()
             control->PCSource = 0;
             state = DECODE;
             break;
+
         case DECODE:
             control->ALUSrcA = 0;
             control->ALUSrcB = 3;
             control->ALUOp = 0;
             if (IR_meta->type == R_TYPE) state = EXEC;
             else if (opcode == EOP) state = EXIT_STATE;
-            else if (IR_meta ->type == I_TYPE) state = I_TYPE_EXEC;
+            else if (opcode == ADDI) state = I_TYPE_EXEC;
+            else if (opcode == LW || opcode == SW) state = MEM_ADDR_COMP;
             else if (IR_meta ->type == B_TYPE) state = BRANCH_COMPL;
             else if (IR_meta ->type == J_TYPE) state = JUMP_COMPL;
             else assert(false);
             break;
+
         case EXEC:
             control->ALUSrcA = 1;
             control->ALUSrcB = 0;
             control->ALUOp = 2;
             state = R_TYPE_COMPL;
             break;
+
         case I_TYPE_EXEC:
             control ->ALUSrcA = 1;
             control ->ALUSrcB = 2;
@@ -97,11 +101,10 @@ void FSM()
             break;
         
         case I_TYPE_COMPL:
-            if (opcode == LW ) control -> MemRead = 1;
-            else if (opcode == SW) control -> MemWrite = 1;
-            control -> IorD = 1;
-            if (opcode == LW || opcode == ADDI) state = WB_STEP;
-            else if (opcode == SW) state = INSTR_FETCH; 
+            control->RegDst = 0;
+            control->MemtoReg = 0;
+            control->RegWrite = 1;
+            state = WB_STEP;
             break;
 
         case WB_STEP:
@@ -134,6 +137,27 @@ void FSM()
             state = INSTR_FETCH;
             break;
         default: assert(false);
+        
+        case MEM_ADDR_COMP:
+            control ->ALUSrcA = 1;
+            control ->ALUSrcB = 2;
+            control ->ALUOp = 0;
+            if (opcode == LW) state = MEM_ACCESS_LD;
+            if (opcode == SW) state = MEM_ACCESS_ST;
+            break;
+
+        case MEM_ACCESS_LD:
+            control->MemRead = 1;
+            control->IorD = 1;
+            state = WB_STEP;
+            break;
+
+        case MEM_ACCESS_ST:
+            control->MemWrite = 1;
+            control->IorD = 1;
+            state = INSTR_FETCH;
+            break;
+
     }
     arch_state.state = state;
 }
@@ -145,6 +169,8 @@ void instruction_fetch()
         int address = arch_state.curr_pipe_regs.pc;
         arch_state.next_pipe_regs.IR = memory_read(address);
     }
+    int pcPlusFour = arch_state.curr_pipe_regs.pc + 4;
+    arch_state.next_pipe_regs.pc = pcPlusFour;
 }
 
 void decode_and_read_RF()
@@ -170,14 +196,13 @@ void execute()
     int shifted_immediate = (immediate) << 2;
     switch (control->ALUSrcB) {
         case 0:
-            if (IR_meta->function == ADD) alu_opB = curr_pipe_regs->B;
-            else if (IR_meta->function == BEQ) alu_opB = immediate;
+            alu_opB = curr_pipe_regs->B;
             break;
         case 1:
             alu_opB = WORD_SIZE;
             break;
         case 2:
-            alu_opB = immediate; //part I just added probs false
+            alu_opB = immediate; 
             break;
         case 3:
             alu_opB = shifted_immediate;
@@ -187,24 +212,23 @@ void execute()
     }
 
 
-    switch (control->ALUOp) {
+    switch (control->ALUOp) { //This is wrong
         case 0:
-         if (IR_meta->function == SW || LW) next_pipe_regs->ALUOut = alu_opA + alu_opB; //This is what you recently changed (it was in case 1)
-         else if (IR_meta->function == SW || IR_meta->function == LW) next_pipe_regs->ALUOut = alu_opA + alu_opB;
-         else if (IR_meta ->function == J) next_pipe_regs ->ALUOut = alu_opB;
+        if (IR_meta->opcode == ADDI) arch_state.curr_pipe_regs.ALUOut = alu_opA+alu_opB;
+        else arch_state.curr_pipe_regs.ALUOut = alu_opB;
             break;
+
         case 1:
-            if (IR_meta->function == BEQ && arch_state.next_pipe_regs.A == arch_state.next_pipe_regs.B) next_pipe_regs ->ALUOut = alu_opB;
-            else 
-                assert(false);
+        arch_state.curr_pipe_regs.ALUOut = alu_opB - alu_opA;
             break;
+
         case 2:
             if (IR_meta->function == ADD)
-                next_pipe_regs->ALUOut = alu_opA + alu_opB;
+                arch_state.curr_pipe_regs.ALUOut = alu_opA + alu_opB;
             else if (IR_meta->function == SLT)
-                if (alu_opA < alu_opB) next_pipe_regs -> ALUOut = 1;
+                if (alu_opA < alu_opB) curr_pipe_regs -> ALUOut = 1;
                 else
-                    next_pipe_regs ->ALUOut =0;
+                    arch_state.curr_pipe_regs.ALUOut =0;
             break;
         default:
             assert(false);
@@ -213,37 +237,66 @@ void execute()
     // PC calculation
     switch (control->PCSource) {
         case 0:
-            next_pipe_regs->pc = curr_pipe_regs->pc+4;
+            next_pipe_regs->pc = arch_state.next_pipe_regs.pc;
             break;
         case 1:
-            if (arch_state.next_pipe_regs.A == arch_state.next_pipe_regs.B) next_pipe_regs->pc = next_pipe_regs -> ALUOut;
+            if (arch_state.curr_pipe_regs.A == arch_state.curr_pipe_regs.B) next_pipe_regs->pc = next_pipe_regs -> ALUOut;
             else if (alu_opA != alu_opB)
-                next_pipe_regs->pc = curr_pipe_regs->pc +4;
+                next_pipe_regs->pc = arch_state.next_pipe_regs.pc;
             break;
         case 2:
-            next_pipe_regs->pc = next_pipe_regs->ALUOut;
+            next_pipe_regs->pc = arch_state.curr_pipe_regs.ALUOut;
+            break;
         default:
             assert(false);
     }
+    //printf("alu_op B is : %d \n", alu_opB);
+    //printf ("next pc is %d \n", next_pipe_regs->pc);
+    //printf("ALUOut is: %d \n", next_pipe_regs -> ALUOut);
 }
 
 
 void memory_access() {
   ///@students: appropriate calls to functions defined in memory_hierarchy.c must be added
+  if (arch_state.IR_meta.type == R_TYPE) {
+    int read_register = arch_state.IR_meta.reg_11_15;
+    arch_state.registers[read_register] = arch_state.curr_pipe_regs.ALUOut;
+  }
+  else if (arch_state.IR_meta.opcode == LW) {
+    int address = arch_state.curr_pipe_regs.ALUOut;
+    int address_2 = arch_state.IR_meta.reg_16_20;
+    arch_state.next_pipe_regs.MDR = memory_read(address);
+    address_2 = memory_read(arch_state.curr_pipe_regs.MDR);
+  }
+  else if (arch_state.IR_meta.opcode == SW) {
+    int address = arch_state.curr_pipe_regs.ALUOut;
+   address = memory_read(arch_state.curr_pipe_regs.B);
+  }
+    
 }
 
 void write_back()
 {
     if (arch_state.control.RegWrite) {
         int write_reg_id;
-        if (ADDI) write_reg_id = arch_state.IR_meta.reg_16_20;
-        else write_reg_id =  arch_state.IR_meta.reg_11_15;
+        if (arch_state.IR_meta.type == I_TYPE) {
+        write_reg_id = arch_state.IR_meta.reg_16_20;
         check_is_valid_reg_id(write_reg_id);
         int write_data =  arch_state.curr_pipe_regs.ALUOut;
         if (write_reg_id > 0) {
             arch_state.registers[write_reg_id] = write_data;
+            printf ("dest register is : %d and data is: %d \n",write_reg_id, write_data );
             //printf("Reg $%u = %d \n", write_reg_id, write_data);
-        } else printf("Attempting to write reg_0. That is likely a mistake \n");
+        } else printf("Attempting to write reg_0. That is likely a mistake \n");}
+        else 
+            {write_reg_id =  arch_state.IR_meta.reg_11_15;
+        check_is_valid_reg_id(write_reg_id);
+        int write_data =  arch_state.curr_pipe_regs.ALUOut;
+        if (write_reg_id > 0) {
+            arch_state.registers[write_reg_id] = write_data;
+            printf ("dest register is : %d and data is: %d \n",write_reg_id, write_data );
+            //printf("Reg $%u = %d \n", write_reg_id, write_data);
+        } else printf("Attempting to write reg_0. That is likely a mistake \n");}
     }
 }
 
