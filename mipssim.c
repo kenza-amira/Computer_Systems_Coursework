@@ -8,7 +8,7 @@
 #include "mipssim.h"
 
 #define BREAK_POINT 2000000// exit after so many cycles -- useful for debugging
-#define I_TYPE 1
+#define I_TYPE 0
 #define B_TYPE 2
 #define J_TYPE 3
 
@@ -77,9 +77,18 @@ void FSM()
             control->ALUSrcA = 0;
             control->ALUSrcB = 3;
             control->ALUOp = 0;
-            if (IR_meta->type == R_TYPE) state = EXEC;
-            else if (opcode == EOP) state = EXIT_STATE;
-            else if (opcode == ADDI) state = I_TYPE_EXEC;
+            printf("Opcode:%d,State%d, Type:%d\n",opcode,state,IR_meta->type );
+            if (IR_meta->type == R_TYPE) {
+                state = EXEC;
+            }
+            else if (opcode == EOP) {
+                state = EXIT_STATE;
+            }
+            else if (opcode == ADDI) {
+                state = I_TYPE_EXEC; 
+                //printf("000000000000000000000000");
+            }
+            
             else if (opcode == LW || opcode == SW) state = MEM_ADDR_COMP;
             else if (IR_meta ->type == B_TYPE) state = BRANCH_COMPL;
             else if (IR_meta ->type == J_TYPE) state = JUMP_COMPL;
@@ -96,6 +105,8 @@ void FSM()
         case I_TYPE_EXEC:
             control ->ALUSrcA = 1;
             control ->ALUSrcB = 2;
+            //printf("-----------------");
+
             control ->ALUOp = 0;
             state = I_TYPE_COMPL;
             break;
@@ -103,6 +114,7 @@ void FSM()
         case I_TYPE_COMPL:
             control->RegDst = 0;
             control->MemtoReg = 0;
+            //printf("-----------------");
             control->RegWrite = 1;
             state = INSTR_FETCH ;
             break;
@@ -168,7 +180,7 @@ void instruction_fetch()
     if (arch_state.control.MemRead) {
         int address = arch_state.curr_pipe_regs.pc;
         arch_state.next_pipe_regs.IR = memory_read(address);
-        arch_state.next_pipe_regs.pc = arch_state.curr_pipe_regs.pc + 1;
+
     }
 }
 
@@ -270,8 +282,10 @@ void memory_access() {
 }
 
 void write_back()
-{ 
+{   
     if (arch_state.control.RegWrite ){
+       
+        //printf("%d, opcode:%d\n",arch_state.control.RegDst,arch_state.IR_meta.opcode);
         int write_reg_id = arch_state.control.RegDst ? arch_state.IR_meta.reg_11_15 : arch_state.IR_meta.reg_16_20;
         int write_data = arch_state.control.RegDst ? arch_state.curr_pipe_regs.ALUOut : (arch_state.control.MemtoReg ? arch_state.curr_pipe_regs.MDR : arch_state.curr_pipe_regs.ALUOut);
          if (write_reg_id > 0) {
