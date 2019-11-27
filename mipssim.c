@@ -270,20 +270,21 @@ void memory_access() {
 }
 
 void write_back()
-{
-    if (arch_state.control.RegWrite) {
-        //check_is_valid_reg_id(write_reg_id);
-    int write_reg_id = arch_state.control.RegDst == 1 ? arch_state.IR_meta.reg_11_15 : arch_state.IR_meta.reg_16_20;
-    printf("Reg $%u \n",write_reg_id);
-    int write_data = arch_state.control.RegDst == 1 ? arch_state.curr_pipe_regs.ALUOut : (arch_state.control.MemtoReg == 1? arch_state.curr_pipe_regs.MDR : arch_state.curr_pipe_regs.ALUOut);
-    if (write_reg_id > 0) {
+{ 
+    if (arch_state.control.RegWrite ){
+        int write_reg_id = arch_state.control.RegDst ? arch_state.IR_meta.reg_11_15 : arch_state.IR_meta.reg_16_20;
+        int write_data = arch_state.control.RegDst ? arch_state.curr_pipe_regs.ALUOut : (arch_state.control.MemtoReg ? arch_state.curr_pipe_regs.MDR : arch_state.curr_pipe_regs.ALUOut);
+         if (write_reg_id > 0) {
         arch_state.registers[write_reg_id] = write_data;
         printf("Reg $%u = %d \n",write_reg_id, write_data);
         } else {
         printf("Attempting to write in Reg $0, this is likely a mistake\n");
+    }      
     }
-    }   
-}
+    
+     
+        }
+    
 void set_up_IR_meta(int IR, struct instr_meta *IR_meta)
 {
     IR_meta->opcode = get_piece_of_a_word(IR, OPCODE_OFFSET, OPCODE_SIZE);
